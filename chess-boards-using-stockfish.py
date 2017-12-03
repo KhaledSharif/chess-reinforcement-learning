@@ -4,6 +4,7 @@ import string
 from typing import Tuple, List
 import numpy as np
 import chess
+import chess.uci
 from random import choice
 
 from tqdm import tqdm
@@ -54,7 +55,7 @@ def alter_result (result: str) -> int:
 def board_as_matrix (board: chess.Board):
 	empty_space = ord('.')
 	matrix = [[ord(y) - empty_space for y in x.split(" ")] for x in str(board).split("\n")]
-	return np.asarray(matrix)
+	return np.asarray(matrix).reshape((1, 64,))
 
 
 def get_piece_count_after_move (_board: chess.Board, _move: chess.Move):
@@ -73,58 +74,74 @@ def get_all_piece_counts (_board: chess.Board):
 	]
 
 
-class Player:
+class StockfishPlayer:
+	def __init__ (self, evaluation_time: float, turn: int):
+		assert turn in [-1, 1]
+		self.turn = turn
+		self.eval_time = evaluation_time
+		sf_engine_path = '/home/khaled/repositories/Stockfish/src/stockfish'
+		self.handler = chess.uci.InfoHandler()
+		self.engine = chess.uci.popen_engine(sf_engine_path)
+		self.engine.info_handlers.append(self.handler)
+
+	def choose_move (self, current_board: chess.Board) -> Tuple[chess.Move, float]:
+		self.engine.position(current_board)
+		evaluation = self.engine.go(movetime=self.eval_time)
+		try:
+			evaluation_value = self.handler.info["score"][1].cp / 100.0 * self.turn
+		except:
+			evaluation_value = None
+		return evaluation[0], evaluation_value
+
+
+class RandomPlayer:
 	def __init__ (self):
 		pass
 
-	def choose_move (self, current_board: chess.Board, list_of_moves: List[chess.Move]):
-		return choice(list_of_moves)
+	def choose_move (self, current_board: chess.Board) -> Tuple[chess.Move, float]:
+		return choice(list(current_board.legal_moves)), None
 
 
 from pandas import DataFrame
 
 grand_master = DataFrame()
 
-for iteration in tqdm(range(int(1e6))):
-	board = chess.Board()
-	white, black = Player(), Player()
 
-	boards = []
+board = chess.Board()
+white, black = StockfishPlayer(5 * 1000, turn=1), StockfishPlayer(5 * 1000, turn=-1)
 
-	for t in range(1000):
-		moves = [b for b in board.legal_moves]
-		if len(moves) == 0:
-			result = alter_result(board.result())
-			# print("Result: {}".format(result))
-			break
+boards = []
 
-		turn = ("white" if board.turn else "black").upper()
+for t in range(1000):
+	moves = [b for b in board.legal_moves]
+	if len(moves) == 0:
+		result = alter_result(board.result())
+		print("Result: {}".format(result))
+		break
 
-		if turn == "WHITE":
-			move = white.choose_move(board, list(board.legal_moves))
-		elif turn == "BLACK":
-			move = black.choose_move(board, list(board.legal_moves))
+	turn = ("white" if board.turn else "black").upper()
 
-		g = board.is_game_over(claim_draw=False)
-		if g is True:
-			g = check_state(board)
+	if turn == "WHITE":
+		print("White's turn")
+		move, evaluation = white.choose_move(board)
+	elif turn == "BLACK":
+		print("Black's turn")
+		move, evaluation = black.choose_move(board)
+	
+	print(move, evaluation)
 
-		if g is not False:
-			result = alter_result(board.result())
-			# print("Result: {}".format(result))
-			break
+	g = board.is_game_over(claim_draw=False)
+	if g is True:
+		g = check_state(board)
 
-		board.push(move)
+	if g is not False:
+		result = alter_result(board.result())
+		print("Result: {}".format(result))
+		break
 
-		bam = board_as_matrix(board).reshape((64,))
-		# assert np.equal(bam.reshape((8, 8,)), board_as_matrix(board)).all()
+	board.push(move)
+	print(board)
+	print("\n")
 
-		boards.append(bam)
+	boards.append(board_as_matrix(board))
 
-	df = DataFrame(data=np.array(boards), columns=["p" + str(x) for x in range(64)])
-	df['result'] = result
-
-	grand_master = grand_master.append(df, ignore_index=True)
-
-s = "".join([random.choice(string.ascii_letters) for _ in range(10)])
-grand_master.to_csv("csv/grand_master_random_{}.csv".format(s.lower()), index=False)

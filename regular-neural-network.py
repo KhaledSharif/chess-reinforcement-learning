@@ -7,34 +7,21 @@ from keras.utils import to_categorical
 from pandas import read_csv
 from pandas import DataFrame
 from keras import regularizers
-from keras.layers import Conv1D, Dense, MaxPooling1D, Dropout, Flatten
+from keras.layers import Conv1D, Dense, MaxPooling1D, Dropout, Flatten, BatchNormalization
 from glob import glob
 import numpy as np
+import random
+import string
 
 model = Sequential()
-model.add(Conv1D(32, kernel_size=(2,), activation='relu', input_shape=(8, 8,),
-                 kernel_regularizer=regularizers.l2(0.01),
-                 activity_regularizer=regularizers.l1(0.01)
-                 ))
+model.add(Dense(64, activation='selu', kernel_initializer="glorot_uniform", input_shape=(64,)))
+model.add(BatchNormalization())
 model.add(Dropout(0.5))
-for i in range(3):
-	model.add(Conv1D(32, kernel_size=(2,), activation='relu',
-	                 kernel_regularizer=regularizers.l2(0.01),
-	                 activity_regularizer=regularizers.l1(0.01)
-	                 ))
-	model.add(Dropout(0.5))
-model.add(Flatten())
-for j in range(4):
-	model.add(Dense(64, activation='relu', kernel_regularizer=regularizers.l2(0.01),
-                activity_regularizer=regularizers.l1(0.01)))
+for j in range(8):
+	model.add(Dense(64, activation='selu', kernel_initializer="glorot_uniform"))
 	model.add(Dropout(0.5))
 model.add(Dense(1, activation='tanh'))
 model.compile(optimizer=Adam(), loss="mse")
-
-# from keras.utils import plot_model
-# plot_model(model, show_shapes=True, to_file='model.png')
-
-# exit()
 
 df = DataFrame()
 for file in glob("csv/*pgn*.csv"):
@@ -51,13 +38,6 @@ print("\n")
 
 training_columns = list(set(list(df)) - {"result"})
 X, Y = df[training_columns].values, df["result"].values
-X = X.reshape((X.shape[0], 8, 8,))
-
-mean, std = np.mean(X), np.std(X)
-X = (X - mean) / std
-minimum, maximum = np.min(X), np.max(X)
-X = (X + minimum) / (maximum + minimum)
-
-#Y = to_categorical(Y + 1, num_classes=3)
-
-model.fit(X, Y, epochs=100, validation_split=0.25, )
+model.fit(X, Y, epochs=100, validation_split=0.1, )
+s = "".join([random.choice(string.ascii_letters) for _ in range(10)])
+model.save("models/regular_nn_{}.h5".format(s.lower()))
